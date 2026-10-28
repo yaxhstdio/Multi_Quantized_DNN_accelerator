@@ -1,0 +1,73 @@
+======================================================================================
+                      FULL-FLEDGED DNN ACCELERATOR — HARDWARE BLOCK SCHEMATIC
+====================================================================================================
+
+  + - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - +
+  | [NEEDED: PHASE 4]                      HOST / EXTERNAL I/O                                    |
+  |   UART RX / AXI-Stream Slave  --->  Loads initial input vector (X) and reads final result     |
+  + - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - +
+                   |                                                       |
+                   v (Writes Initial Features)                             v (Configures Layer)
+  + - - - - - - - - - - - - - - - - - +                   + - - - - - - - - - - - - - - - - - - - +
+  | [NEEDED: PHASE 3 - MEMORY]        |                   | [NEEDED: PHASE 4 - BRAIN]             |
+  |                                   |                   |                                       |
+  |  1. Input Features Buffer         |                   |         MASTER CONTROL FSM            |
+  |     (Holds Layer 0 inputs)        |                   |        (mac_control_unit.v)           |
+  |               |                   |                   |                                       |
+  |               +---> [Databus MUX] |<---(Feedback)-----+  States: IDLE -> FETCH -> COMPUTE     |
+  |               |         |         |     (Next Layer)  |          -> REQUANT -> WRITEBACK      |
+  |  2. Parameter BRAM /    |         |                   |                                       |
+  |     Weight & Bias SRAM  |         |                   |  Generates:                           |
+  |     (param_buffer.v)    |         |                   |   - SRAM Read/Write Addresses         |
+  |          |        |     |         |                   |   - mac_en, accum_clr, last_cycle     |
+  + - - - - -|- - - - |- - -|- - - - -+                   |   - mode_in[1:0], relu_en             |
+             |        |     |                             + - - - - - - - - - - - - - - - - - - - +
+             |        |     |                                        |               |
+   weights_  | biases_|     | act_in[15:0]              mode_in[1:0] |               | Control
+   flat[63:0]| flat   |     | (Broadcast to all 4 PEs)               |               | Signals
+             v [127:0]v     v                                        v               v
+  +===============================================================================================+
+  | [COMPLETED & VERIFIED: PHASES 1 & 2] — CONFIGURABLE COMPUTE ENGINE (mac_array_requantized.v)  |
+  |                                                                                               |
+  |                                   +------------------------------+                            |
+  |                                   |     MODE DECODER             |                            |
+  |                                   |    (mode_decoder.v)          |                            |
+  |                                   | 00:INT4 | 01:INT8 | 10:INT16 |                            |
+  |                                   +------------------------------+                            |
+  |                                      |                        |                               |
+  |                    is_int4 / is_int8 |                        | shift_bits[4:0] (3, 7, or 14) |
+  |          +---------------------------+------------------------+--------------------+          |
+  |          |                                                                         |          |
+  |          v                                                                         |          |
+  |  +---------------+      +---------------+      +---------------+      +---------------+       |
+  |  |  PE 0 (MAC)   |      |  PE 1 (MAC)   |      |  PE 2 (MAC)   |      |  PE 3 (MAC)   |       |
+  |  |  (pe_mac.v)   |      |  (pe_mac.v)   |      |  (pe_mac.v)   |      |  (pe_mac.v)   |       |
+  |  |               |      |               |      |               |      |               |       |
+  |  | [Sign-Extend] |      | [Sign-Extend] |      | [Sign-Extend] |      | [Sign-Extend] |       |
+  |  | act * w0      |      | act * w1      |      | act * w2      |      | act * w3      |       |
+  |  |   + b0 / acc  |      |   + b1 / acc  |      |   + b2 / acc  |      |   + b3 / acc  |       |
+  |  +---------------+      +---------------+      +---------------+      +---------------+       |
+  |          |                      |                      |                      |               |
+  |          | pe0_acc[31:0]        | pe1_acc[31:0]        | pe2_acc[31:0]        | pe3_acc[31:0] |
+  |          v                      v                      v                      v               |
+  |  +---------------+      +---------------+      +---------------+      +---------------+       |
+  |  | REQUANTIZE 0  |      | REQUANTIZE 1  |      | REQUANTIZE 2  |      | REQUANTIZE 3  |       |
+  |  | (Round + >>>) |      | (Round + >>>) |      | (Round + >>>) |      | (Round + >>>) |       |
+  |  | (ReLU + Clip) |      | (ReLU + Clip) |      | (ReLU + Clip) |      | (ReLU + Clip) |       |
+  |  +---------------+      +---------------+      +---------------+      +---------------+       |
+  |          |                      |                      |                      |               |
+  |          +-----------------+----+----------------------+----------------------+               |
+  |                            |                                                                  |
+  |                            v quant_out_flat[63:0] (4x INT4/8/16 Outputs) + valid_out          |
+  +============================|==================================================================+
+                               |
+                               v (Triggered when valid_out == 1)
+  + - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - +
+  | [NEEDED: PHASE 3 - OUTPUT & LAYER FEEDBACK ROUTING]                                           |
+  |                                                                                               |
+  |   [Accumulations DEMUX] ---> [Activation FIFO (fifo.v)] ---> [Activation Buffer]              |
+  |                                                                |                              |
+  |                                       +------------------------+                              |
+  |                                       |--> If Hidden Layer: Loops back to [Databus MUX] above |
+  |                                       +--> If Final Layer : Outputs Classification Result     |
+  + - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - +

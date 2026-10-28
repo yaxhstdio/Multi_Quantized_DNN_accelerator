@@ -1,0 +1,2 @@
+# Multi_Quantized_DNN_accelerator
+initial_prototyped

@@ -1,0 +1,43 @@
+====================================================================
+PHASE 1: COMPUTE PRIMITIVES - PORT NAMES & DESCRIPTIONS DOCUMENT
+====================================================================
+
+1. SERIAL MAC UNIT (serial_mac)
+--------------------------------------------------------------------
+Inputs:
+- clk          : System Clock (rising edge triggered)
+- rst_n        : Active-Low Reset (0 = clear accumulator to 0)
+- mac_en       : Clock Enable (1 = compute/accumulate, 0 = freeze state to save power)
+- accum_clr    : Accumulator Clear / Load Control 
+                 (1 = start new dot-product, load bias + product; 
+                  0 = accumulate product into existing sum)
+- act_in       : Signed INT8 Activation input (DATA_WIDTH bits)
+- weight_in    : Signed INT8 Weight input (DATA_WIDTH bits)
+- bias_in      : Signed INT24 Bias input (ACC_WIDTH bits)
+
+Outputs:
+- accum_out    : Signed INT24 Accumulator output (ACC_WIDTH bits)
+
+
+2. REQUANTIZATION & ACTIVATION BLOCK (requantize)
+--------------------------------------------------------------------
+Inputs:
+- relu_en      : ReLU Activation Enable 
+                 (1 = clamp negative results to 0; 
+                  0 = linear pass-through preserving negative numbers)
+- accum_in     : Signed INT24 Accumulator input from MAC (ACC_WIDTH bits)
+
+Outputs:
+- quant_out    : Signed INT8 Requantized, rounded, and saturated output (OUT_WIDTH bits)
+
+
+3. SCHEMATIC EQUIVALENCE MAPPING (Reference to Synthesized Schematic)
+--------------------------------------------------------------------
+Schematic Signal Name  ->  Phase 1 Code Equivalent
+- CLK                  ->  clk
+- COMPUTE_EN           ->  mac_en
+- CLR_ACC              ->  accum_clr
+- X_IN[7:0]            ->  act_in[7:0]
+- PARAM[7:0]           ->  weight_in[7:0]
+- MAC_OUT[15:0]        ->  accum_out[15:0] (scaled to 16-bit in that specific schematic build)
+====================================================================
