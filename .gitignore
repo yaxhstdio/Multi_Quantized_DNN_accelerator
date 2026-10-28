@@ -1,0 +1,24 @@
+Python Virtual Environment
+
+venv/
+pycache/
+*.pyc
+
+Icarus Verilog Compiled Binaries
+
+*.vvp
+
+GTKWave Waveform Dump Files
+
+*.vcd
+
+Custom Simulation Outputs & Logs
+
+my_sim_output/
+my_sim_output
+progress.txt
+
+OS Generated Files
+
+.DS_Store
+Thumbs.db
