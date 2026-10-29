@@ -87,6 +87,12 @@ module accelerator_top #(
     );
 
     // 4. Output Activation FIFO
+    // XOR reduction tree forces the compiler to keep all 4 PEs
+    wire [15:0] combined_pe_out = quant_out_flat[15:0] ^ 
+                                  quant_out_flat[31:16] ^ 
+                                  quant_out_flat[47:32] ^ 
+                                  quant_out_flat[63:48];
+
     sync_fifo #(
         .DATA_WIDTH (MAX_DATA_WIDTH),
         .ADDR_WIDTH (4)
@@ -94,7 +100,7 @@ module accelerator_top #(
         .clk        (clk),
         .rst_n      (rst_n),
         .wr_en      (fifo_wr_en),
-        .wr_data    (quant_out_flat[15:0]), // Route PE0's output to FIFO
+        .wr_data    (combined_pe_out), // Route the combined output
         .rd_en      (fifo_rd_en),
         .rd_data    (fifo_rd_data),
         .full       (fifo_full),
