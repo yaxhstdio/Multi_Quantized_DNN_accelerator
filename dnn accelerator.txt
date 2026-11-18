@@ -1,0 +1,75 @@
+# Configurable-Precision (INT4 / INT8 / INT16) DNN Hardware Accelerator
+**Author / Lead Developer:** Yash Gopal Patil  
+**Domain:** Digital IC Design, VLSI Architecture, and Edge AI Hardware Acceleration  
+
+---
+
+## 1. Executive Summary
+This project implements a fully autonomous, highly optimized, multi-precision Deep Neural Network (DNN) hardware accelerator written in synthesizable Verilog HDL. Designed with an ASIC/FPGA-oriented digital design methodology, the architecture supports variable-precision arithmetic (**INT4, INT8, and INT16**) on the fly. It combines spatial parallelism (parallel Processing Element vectors), dynamic sign-extension logic for hardware resource sharing, guard-bit overflow protection, and a hardwired Finite State Machine (FSM) controller to execute neural network inference efficiently with minimal power and silicon footprint.
+
+---
+
+## 2. System Architecture & Subsystem Breakdown
+
+The accelerator architecture is partitioned into independent, modular hardware blocks designed for high performance, low latency, and clean physical synthesis.
+
+| Subsystem Module | Component Name | Functional Description |
+| :--- | :--- | :--- |
+| **Precision Controller** | `mode_decoder.v` | Decodes the 2-bit runtime mode (`mode_in[1:0]`) into precision flags (`is_int4`, `is_int8`, `is_int16`) and dynamic right-shift scaling factors (`shift_bits`). |
+| **Compute Engine (PE)** | `pe_mac.v` | Multi-precision Processing Element. Uses sign-extension masking to reuse a single 16-bit multiplier for INT4, INT8, and INT16, paired with a 32-bit accumulator. |
+| **Requantization Unit** | `requantize_var.v` | Performs half-LSB rounding, arithmetic right-shifting (`>>>`), hardware ReLU activation, and mode-aware saturation clipping (`[-8, +7]` to `[-32768, +32767]`). |
+| **Vector Compute Array** | `mac_array_requantized.v` | Spatial 4-PE parallel array featuring input feature broadcasting, flat-bus weight/bias routing, and pipeline registers with a `valid_out` handshake flag. |
+| **On-Chip Memory** | `parameter_bram.v` | Behavioral Block RAM (BRAM) initialized via text-based `.hex` files using `$readmemh` to store pre-trained network weights and biases. |
+| **Data Buffering** | `sync_fifo.v` | First-In, First-Out (FIFO) queue for holding intermediate layer outputs and enabling multi-layer feed-forward data routing. |
+| **Master Control FSM** | `mac_control_unit.v` | Hardwired Finite State Machine that autonomously manages states (`IDLE -> FETCH -> COMPUTE -> WRITEBACK`), driving BRAM read addresses and PE control signals. |
+
+---
+
+## 3. Workflow & Dataflow Design
+
+### A. Software-to-Hardware Flow
+1. **Model Quantization (Python):** Pre-trained weights and activations are quantized from floating-point format down to fixed-point integer precision (`INT4`, `INT8`, or `INT16`).
+2. **Golden Model Reference (`golden_model.py`):** A NumPy-based software model executes identical matrix-vector operations and generates expected mathematical outputs alongside compiled `.hex` memory initialization files (`weights.hex`).
+3. **Autonomous Execution:** The hardware FSM loads the hex data into the BRAM, sequences through the layers, executes the compute cycles, and stores results without requiring external testbench intervention.
+
+### B. Hardware Datapath Execution Workflow
+1. **Fetch State (`S_FETCH`):** The Control FSM asserts `bram_rd_en` and points to the target address inside the Parameter BRAM.
+2. **Compute State (`S_COMPUTE`):** 
+   * A single activation feature (`act_in`) is **broadcasted** across all parallel Processing Elements (PEs).
+   * Unique weights are sliced from the packed BRAM bus (`weights_flat`) and routed to each PE.
+   * On the first cycle of a dot product (`feature_counter == 0`), `accum_clr` is asserted high, instructing the PE's accumulator MUX to load `bias + (act * weight)` directly in a single cycle.
+3. **Requantization & Writeback (`S_WRITEBACK`):**
+   * The 32-bit raw accumulator value passes through the requantizer, where it is rounded, shifted down, checked for ReLU, and saturated to prevent overflow.
+   * When `valid_out` asserts high, the output data is pushed into the `sync_fifo.v` buffer for downstream or multi-layer consumption.
+
+---
+
+## 4. Hardware Acceleration Highlights & Design Choices
+
+* **Resource Sharing via Sign-Extension Masking:** Rather than instantiating three separate physical multiplier blocks for different precisions, a single 16-bit multiplier dynamically pads incoming 4-bit, 8-bit, or 16-bit data using its sign bit (`MSB`), drastically reducing silicon area.
+* **Overflow Protection (Guard Bits):** Accumulation registers are expanded to 32 bits wide, providing ample guard bits to support deep sequential accumulations without wrap-around errors.
+* **Zero-Latency Arithmetic Shifting:** Division by scaling factors ($2^3, 2^7, 2^14$) is implemented entirely through hardwired right-shift operators (`>>>`), eliminating costly divider hardware.
+* **Dynamic Saturation Bounds:** Hardware automatically adapts its clipping thresholds (`MAX_VAL` and `MIN_VAL`) based on the active runtime precision mode.
+
+---
+
+## 5. Achieved Progress & Verification Status
+
+* **Phase 1 & 2 (Compute Primitives & MAC Array):** Fully designed, synthesized, and verified via structural testbenches (`tb_phase1.v`, `tb_phase2.v`) and waveform simulations (GTKWave), confirming correct multi-precision math, ReLU filtering, and saturation behavior.
+* **Phase 3 & 4 (Memory & Control FSM):** Fully integrated via `tb_top.v`. Simulation results verify that the BRAM, FIFO, and FSM interact correctly to execute autonomous data processing streams validated against the Python Golden Model console outputs.
+
+---
+
+## 6. Repository File Structure
+
+```text
+├── mode_decoder.v               # Precision configuration decoder
+├── pe_mac.v                     # Multi-precision Processing Element
+├── requantize_var.v             # Configurable scaling, ReLU, and saturation block
+├── mac_array_requantized.v      # Top-level 4-PE parallel vector compute engine
+├── parameter_bram.v             # BRAM model with $readmemh initialization
+├── sync_fifo.v                  # Synchronous activation output FIFO
+├── mac_control_unit.v           # Master Finite State Machine controller
+├── golden_model.py              # Software reference model & hex file generator
+├── weights.hex                  # Auto-generated memory initialization file
+└── tb_top.v                     # Top-level autonomous integration testbench
