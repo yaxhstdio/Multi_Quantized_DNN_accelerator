@@ -8,6 +8,7 @@ module mac_array_requantized #(
     input  wire                                      clk,
     input  wire                                      rst_n,
     input  wire [1:0]                                mode_in,       // 00:INT4, 01:INT8, 10:INT16
+    input  wire [4:0]                                shift_in,      // Runtime per-layer right-shift
     input  wire                                      mac_en,
     input  wire                                      accum_clr,
     input  wire                                      relu_en,
@@ -22,14 +23,14 @@ module mac_array_requantized #(
 
     // 1. Instantiate Mode Decoder
     wire       is_int4, is_int8, is_int16;
-    wire [4:0] shift_bits;
+    wire [4:0] default_shift_bits; // Kept for compatibility; overridden by shift_in
 
     mode_decoder u_decoder (
         .mode_in    (mode_in),
         .is_int4    (is_int4),
         .is_int8    (is_int8),
         .is_int16   (is_int16),
-        .shift_bits (shift_bits)
+        .shift_bits (default_shift_bits)
     );
 
     // 2. Generate 4 Parallel PEs + Requantizers
@@ -63,12 +64,12 @@ module mac_array_requantized #(
                 .relu_en    (relu_en),
                 .is_int4    (is_int4),
                 .is_int8    (is_int8),
-                .shift_bits (shift_bits),
+                .shift_bits (shift_in),
                 .accum_in   (pe_acc_wire),
                 .quant_out  (pe_quant_wire)
             );
 
-            assign acc_out_flat[(i+1)*ACC_WIDTH - 1 : i*ACC_WIDTH]          = pe_acc_wire;
+            assign acc_out_flat[(i+1)*ACC_WIDTH - 1 : i*ACC_WIDTH]             = pe_acc_wire;
             assign quant_out_flat[(i+1)*MAX_DATA_WIDTH - 1 : i*MAX_DATA_WIDTH] = pe_quant_wire;
 
         end

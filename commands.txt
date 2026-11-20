@@ -1,0 +1,1 @@
+cp "/mnt/c/Users/meyas/Desktop/study material/projects/MLCV + DNN accelerator/"*.hex . - cpy files in ubuntu from windows

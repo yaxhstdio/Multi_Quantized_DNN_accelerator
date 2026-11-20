@@ -72,9 +72,10 @@ module mac_control_unit #(
             end
 
             S_COMPUTE: begin
-                mac_en      = 1'b1;
-                bram_rd_en  = 1'b1; // Fetch next weight simultaneously
-                
+                mac_en       = 1'b1;
+                bram_rd_addr = feature_counter + 1'b1; // Prefetch next weight
+                bram_rd_en   = (feature_counter < layer_length - 1);
+
                 // Assert accum_clr only on the very first feature cycle
                 if (feature_counter == 0) begin
                     accum_clr = 1'b1;
